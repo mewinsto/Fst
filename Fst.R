@@ -1,10 +1,6 @@
-#FST
-
-library(hierfstat)
-
 ##IMPORTS AND FORMATS SNP MATRIX ("GENO_MATRIX") FROM .GENO FILE (pyRAD OUTPUT)
 #GENO_MATRIX HAS SAMPLES AS ROWS AND SNPS FOR COLUMNS
-setwd("~/Desktop/")
+setwd("~/Desktop/FST/mexicanum/")
 geno_data = scan("all_lanes_mex_10k.usnps.geno",what = "character")
 L = length(geno_data)
 S = nchar(geno_data[[1]])
@@ -22,7 +18,7 @@ samples = read.table("all_lanes_mex_10k.samples",header=FALSE)
 samples = samples$V1
 
 #READS IN BURCH POP TO MAKE A TEST VECTOR, THEN CONSTRUCTS NULL VECTOR BASED ON POPS
-testpop = read.table("mexicanum_pop.txt",header=FALSE)
+testpop = read.table("burch_pop.txt",header=FALSE)
 test_vector = {}
 for (i in 1:S){
   test_vector[i] = testpop$V2[match(samples[i],testpop$V1)]
@@ -42,6 +38,27 @@ for (i in 1:S){
     null_sub = c(null_sub,i)
   }
 }
+
+##THIS MODULE CALCULATES PI (NUCLEOTIDE DIVERSITY)
+pi = {}
+for (i in 1:L){
+  locus = {}
+  locus = geno_matrix[,i]
+  locus = locus[!is.na(locus)]
+  locus_sum = 0
+  for (j in 2:length(locus)){
+    jcount = j - 1
+    for (k in 1:jcount){
+      diff = 0
+      diff = abs(locus[j]-locus[k])
+      locus_sum = locus_sum + diff
+    }
+  }
+  locus_sum = (2*locus_sum)/(length(locus)^2) 
+  pi[i] = locus_sum
+}
+
+write(pi,file="pi_lucanoides",ncol = 1)
 
 ##THIS MODULE CALCULATES FREQUENCIES AND FST FOR TEST
 #Counts and mean frequencies of alleles
@@ -73,8 +90,8 @@ for (i in 1:L){
 FST = abs(FST)
 
 ##WRITE FST TO FILE
-write(FST,file="Fst_test_mexicanum.txt",ncolumns=1)
-write(geno_cover,file="geno_cover_mexicanum.txt",ncolumns=1)
+write(FST,file="Fst_test_lucanoides.txt",ncolumns=1)
+write(geno_cover,file="geno_cover_lucanoides.txt",ncolumns=1)
 
 ##THIS MODULE CALCULATES FREQUENCIES AND FST FOR NULL
 #Counts and mean frequencies of alleles
@@ -102,28 +119,159 @@ for (i in 1:L){
 FST_N = abs(FST_N)
 
 #WRITE FST TO FILE
-write(FST_N,file="Fst_null_mexicanum.txt",ncolumns=1)
+write(FST_N,file="Fst_null_lucanoides.txt",ncolumns=1)
 
-###PLOTTING 
+##THIS MODULE CALCULATES MAF FOR EACH LOCUS
+af = {}
+for (i in 1:L){
+  L_maf = sum(!is.na(geno_matrix[,i]))
+  L_sum = sum(geno_matrix[,i],na.rm=TRUE)
+  af[i] = L_sum/(2*L_maf)
+}
+
+#MAKE MAF MINOR
+maf = {}
+for (i in 1:L){
+  if (af[i] > 0.5){
+    maf[i] = 1 - af[i]
+  }
+}
+
+#WRITE MAF OR AF TO FILE
+write(maf,file="MAF_mexicanum.txt", ncolumns=1)
+write(af, file="AF_mexicanum.txt", ncolumns=1)
+
+##THIS MODULE CALCULATES H-W EQUILIBRIUM FOR EACH LOCUS
+HW_chi = {}
+for (i in 1:L){
+  L_maf = sum(!is.na(geno_matrix[,i]))
+  p = af[i]
+  q = 1 - p
+  exp_pp = L_maf*(p^2)
+  exp_pq = L_maf*(2*p*q)
+  exp_qq = L_maf*(q^2)
+  act_pp = sum(geno_matrix[,i] == 2,na.rm=TRUE)
+  act_pq = sum(geno_matrix[,i] == 1,na.rm=TRUE)
+  act_qq = sum(geno_matrix[,i] == 0,na.rm=TRUE)
+  HW_chi[i] = ((act_pp - exp_pp)^2/exp_pp) + ((act_pq - exp_pq)^2/exp_pq) + ((act_qq - exp_qq)^2/exp_qq)
+}
+
+#WRITE HARDY-WEINBERG CHI-SQUARED STAT (CAN DERIVE p-values FROM THIS)
+write(HW_chi,file="HW_chi_mexicanum.txt",ncolumns=1)
+
+##READ IN FILES: NULL AND TEST AND PLOT AGAINST ONE ANOTHER, ALSO NUC FREQ
+library(ggplot2)
+
+pi = read.table("~/Desktop/FST/vagans/pi_vagans")
+f_null = read.table("~/Desktop/FST/vagans/Fst_null_vagans.txt")
+f_test = read.table("~/Desktop/FST/vagans/Fst_test_vagans.txt")
+cover_test = read.table("~/Desktop/FST/vagans/geno_cover_vagans.txt") 
+af = read.table("~/Desktop/FST/vagans/AF_vagans.txt")
+HW_chi = read.table("~/Desktop/FST/vagans/HW_chi_vagans.txt")
+
+FST_data = cbind(f_null,f_test,cover_test,pi)
+names(FST_data) = c("F_null","F_test","Cover","Pi")
+
+##SUBSETS FST DATA INTO COVERAGE GROUPS
+for (i in min(cover_test):max(cover_test)){
+  name = paste("FST_data_cover_",i, sep = "")
+  assign(name,subset(FST_data, cover_test == i))
+}
+
+#SUBSETS FST DATA INTO GROUPS WITH FST = 1.0
+FST_data_HT = subset(FST_data, F_test == 1.0)
+FST_data_HN = subset(FST_data, F_null == 1.0)
+
+#SUBSETS FST DATA INTO GROUPS WITH FST < 0.1
+FST_data_LT = subset(FST_data, F_test < 0.1)
+FST_data_LN = subset(FST_data, F_null < 0.1)
+
+#SUBSETS FST DATA INTO GROUPS WITH Pi > 0.8
+Hi_Pi = subset(FST_data, Pi > 0.8)
+Lo_Pi = subset(FST_data, Pi < 0.2)
+
+Pi_cat = cut(FST_data$Pi,breaks=10)
+
+##############
+###PLOTTING###
+##############
+
 #Plot densities of these values
-plot(density(geno_means,bw=0.01),xlim=c(0,1),main="Distribution of Major Allele Frequencies across Loci", xlab="Major Allele Frequency", sub="Species = E. mexicanum -- N = 163,813 - bw = .01")
-plot(density(geno_cover,bw=0.5),xlim=c(4,S),main="Density Distribution of Individuals per Locus: E. mexicanum", xlab="Number of Individuals (Max = 29)",sub="N = 163,813, bw = 0.5")
+plot(density(FST_data$Pi,bw=0.01),xlim=c(0,1),main="Distribution of Major Allele Frequencies across Loci", xlab="Major Allele Frequency", sub="Species = E. lucanoides (G) -- N = 36,287 - bw = .01")
+plot(density(FST_data$Cover,bw=0.5),xlim=c(4,16),main="Density Distribution of Individuals per Locus: E. lucanoides", xlab="Number of Individuals (Max = 19)",sub="N = 63,087, bw = 0.5")
 
 ##PLOT FST AGAINST GENO_COVER
-plot(density(FST_N,na.rm=TRUE,bw=.004),ylim=c(0,15),main="Density Distribution for Fst Values: E. mexicanum",xlab="Fst Values", sub = "N = 163,813   bw = 0.004")
-lines(density(FST,na.rm=TRUE,bw=.004),col=2)
+plot(density(FST_data$F_test,na.rm=TRUE,bw=.004),ylim=c(0,60),main="Density Distribution for Fst Values: E. lucanoides (G)",xlab="Fst Values", sub = "N = 63,087   bw = 0.004")
+lines(density(FST_data$F_null,na.rm=TRUE,bw=.004),col=2)
 
-plot(FST,geno_cover,col=2,main="Fst for all Loci by Number of Samples",xlab="Fst",ylab="Number of Individuals with Locus (Max: 29)",sub="Black = Null, Red = mexicanum -- N = 163,813")
-points(FST_N,geno_cover)
+plot(FST_data$F_test,FST_data$Cover,col=2,main="Fst for all Loci by Number of Samples",xlab="Fst",ylab="Number of Individuals with Locus (Max: 161)",sub="Black = Null, Red = lucanoides/burchellii -- N = 253,297")
+points(FST_data$F_null,FST_data$Cover)
 
-##READ IN FILES: NULL AND TEST AND PLOT AGAINST ONE ANOTHER
-#f_null = read.table("Fst_null.txt")
-#f_test = read.table("Fst_test.txt")
-#cover_test = read.table("geno_cover.txt") 
+#PLOTS NUCLEOTIDE DIVERSITY FOR HIGH VS. LOW FST LOCI
+plot(density(FST_data_LT$Pi),main="High vs. Low Fst Loci Nucleotide Diversity Distributions (E. burchellii_BC)",xlim = c(0,1), xlab="Pi (Normalized)",sub="Black = Low (Fst < 0.1) [N = 55,574] -- Red = High (Fst = 1.0) [N = 4,866]")
+lines(density(FST_data_HT$Pi),col=2)
 
+plot(density(FST_data_HN$Cover,bw=1),xlim=c(0,161))
+lines(density(FST_data_HT$Cover),col=2)
+
+##Plots LOW DIVERSITY AND HIGH DIVERSITY LOCI
+HP = ggplot(Hi_Pi, aes(x = Cover, y = F_test))
+HP + geom_point(alpha = 0.05) + ggtitle(expression(atop("Fst and Individual Coverage for High Nucleotide Diversity Loci (>0.8)", atop(italic("E. drepanophorum (N = 15, L = 12,335)", "")))))
+
+HP = ggplot(Lo_Pi, aes(x = Cover, y = F_test))
+HP + geom_point(alpha = 0.05) + ggtitle(expression(atop("Fst and Individual Coverage for Low Nucleotide Diversity Loci (<0.2)", atop(italic("E. drepanophorum (N = 15, L = 7950)", "")))))
+
+
+##PLOTS DENSITY DISTRIBUTION OF NUCLEOTIDE DIVERSITY FOR FST == 1.0
+TOP_DENS = ggplot(FST_data_HT, aes(x = Pi))
+TOP_DENS + geom_density(fill = "black") + ggtitle(expression(atop("Fst Distributions for Nucleotide Diversity Classes", atop(italic("E. burchellii & E. lucanoides (N = 85, L = 40,722)", ""))))) + labs(x = "Nucleotide Diversity", y = "Density")
+
+##GGPLOT NUCLEOTIDE DIVERSITY CLASSES AGAINST FST FOR NULL AND TEST
+p = ggplot(FST_data, aes(factor(Pi_cat), F_null))
+
+p + geom_violin() + ggtitle(expression(atop("Fst Distributions for Nucleotide Diversity Classes", atop(italic("E. burchellii (N = 75, L = 168,518)", ""))))) + labs(x = "Nucleotide Diversity Class", y = "Fst Value")
+p + geom_boxplot() + ggtitle(expression(atop("Fst Distributions for Nucleotide Diversity Classes: Null Hypothesis", atop(italic("E. lucanoides (N = 15, L = 63,087", ""))))) + labs(x = "Nucleotide Diversity Class", y = "Fst Value")
+
+##PLOT DENSITY DISTRIBUTION OF NUCLEOTIDE DIVERSITY
+DENS = ggplot(FST_data, aes(x = Pi))
+DENS + geom_density(fill = "black") + labs(x = "Nucleotide Diversity", y = "Density")
+
+hist(FST_data_HT$Cover,xlim=c(0,19),breaks=15,col=2,main="Histogram of Loci with FST = 1.0: E. lucanoides",xlab="Number of Individuals Sampled",ylab="Count",sub="Red = E. lucanoides : N = 32,879; Blue = Null : N = 3,791")
+hist(FST_data_HN$Cover,xlim=c(0,37),breaks=9,add=T,col=4)
+
+m = ggplot(FST_data_HT, aes(x=Cover))
+m + geom_histogram(binwidth = 1, fill = "darkslategray4") + geom_histogram(data = FST_data_HN, fill = "firebrick4", binwidth = 1)
+
+d = ggplot(Hi_Pi, aes(x=FST))
+
+#write(FST_data_HT$Cover,file="FST_HT_burchellii_SCA.txt",ncol=1)
+#write(FST_data_HN$Cover,file="FST_HN_burchellii_SCA.txt",ncol=1)
+
+norm_FST = table(FST_data_HT$Cover)/(table(FST_data$Cover)[1:73])
+plot(norm_FST,ylim=c(0,0.8),main="Percentage of Loci with Fst = 1.0: E. lucanoides (G)",xlab="Individual Coverage",ylab="Percentage of Loci",sub="N = 19, L = 36,287: Dotted line = 0.02 ")
+abline(h=0.5,lty=3)
+
+norm_df = as.data.frame(norm_FST)
+q = ggplot(norm_df, aes(x = Freq))
+qplot(norm_df$Var1, norm_df$Freq, ylim=c(0,1),size=3)
+q + geom_histogram(binwidth = 0.01)
+#write(norm_FST,file="norm_FST_burchellii",ncol=dim(norm_FST))
 
 #plot(f_test$V1,cover_test$V1,col=2,main="Fst for all Loci by Number of Samples",xlab="Fst",ylab="Number of Individuals with Locus (Max: 75)",sub="Black = Null, Red = mexicanum")
 #points(f_null$V1,cover_test$V1)
 
 #plot(density(f_test$V1,na.rm=TRUE),col=2,xlim=c(0,1),ylim=c(0,30),main="Fst for all Loci: Density Distribution",xlab="Fst",ylab="Density",sub="Black = Null, Red = Test")
 #lines((density(f_null$V1,na.rm=TRUE)))
+
+###PLOTS WORKING WITH NUCLEOTIDE DIVERSITY AND FST
+#Plots relationship between normalized Pi and Fst
+plot(FST_data$Pi,FST_data$F_test,xlab="Pi (Normalized)",ylab="Fst",main="Nucleotide Diversity vs. Fst: E. burchellii",sub="N = 168,518")
+plot(density(FST_data$Pi),xlab="Pi (Normalized)",main="Density Distribution for Nucleotide Diversity: E. burchellii",sub = "N = 168,518")
+plot(density(FST_data$F_test,na.rm=TRUE),xlab="Fst",main="Density Distribution for Fst: E. burchellii",sub = "N = 168,518")
+
+pi_fst_plot = ggplot(FST_data, aes(Pi, y = value))
+pi_fst_plot + geom_point(alpha = 0.05, aes(y = F_null))
+pi_fst_plot + geom_point(alpha = 0.05, aes(y = F_test))
+
+#Plots Pi against Coverage of Individuals
+plot(FST_data$Cover,FST_data$Pi)
