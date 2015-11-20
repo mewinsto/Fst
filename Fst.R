@@ -1,7 +1,7 @@
 ##IMPORTS AND FORMATS SNP MATRIX ("GENO_MATRIX") FROM .GENO FILE (pyRAD OUTPUT)
 #GENO_MATRIX HAS SAMPLES AS ROWS AND SNPS FOR COLUMNS
-setwd("~/Desktop/FST/mexicanum/")
-geno_data = scan("all_lanes_mex_10k.usnps.geno",what = "character")
+setwd("~/Desktop/FST/lucanoides//")
+geno_data = scan("all_lanes_lucanoides_10k.usnps.geno",what = "character")
 L = length(geno_data)
 S = nchar(geno_data[[1]])
 geno_matrix = matrix(data = NA, nrow = S, ncol = L)
@@ -14,11 +14,11 @@ for (i in 1:L){
 geno_matrix[geno_matrix == 9] = NA
 
 ##IMPORTS SAME SET OF SAMPLES FROM .SAMPLES FILE TO CONSTRUCT POPULATION VECTORS
-samples = read.table("all_lanes_mex_10k.samples",header=FALSE)
+samples = read.table("all_lanes_lucanoides_10k.sample",header=FALSE)
 samples = samples$V1
 
 #READS IN BURCH POP TO MAKE A TEST VECTOR, THEN CONSTRUCTS NULL VECTOR BASED ON POPS
-testpop = read.table("burch_pop.txt",header=FALSE)
+testpop = read.table("all_lanes_lucanoides_10k_pop.txt",header=FALSE)
 test_vector = {}
 for (i in 1:S){
   test_vector[i] = testpop$V2[match(samples[i],testpop$V1)]
@@ -134,12 +134,14 @@ maf = {}
 for (i in 1:L){
   if (af[i] > 0.5){
     maf[i] = 1 - af[i]
+  } else{
+    maf[i] = af[i]
   }
 }
 
 #WRITE MAF OR AF TO FILE
-write(maf,file="MAF_mexicanum.txt", ncolumns=1)
-write(af, file="AF_mexicanum.txt", ncolumns=1)
+write(maf,file="MAF_lucanoides.txt", ncolumns=1)
+write(af, file="AF_lucanoides.txt", ncolumns=1)
 
 ##THIS MODULE CALCULATES H-W EQUILIBRIUM FOR EACH LOCUS
 HW_chi = {}
@@ -157,20 +159,28 @@ for (i in 1:L){
 }
 
 #WRITE HARDY-WEINBERG CHI-SQUARED STAT (CAN DERIVE p-values FROM THIS)
-write(HW_chi,file="HW_chi_mexicanum.txt",ncolumns=1)
+write(HW_chi,file="HW_chi_lucanoides.txt",ncolumns=1)
 
+#NUMBER OF INDIVIDUALS WITH SNP (FOR REMOVING SINGLETONS)
+allele_class = {}
+for (i in 1:L){
+  allele_class[i] = maf[i]*geno_cover[i]
+}
+
+write(allele_class,file="AC_lucanoides.txt",ncolumns=1)
 ##READ IN FILES: NULL AND TEST AND PLOT AGAINST ONE ANOTHER, ALSO NUC FREQ
 library(ggplot2)
 
-pi = read.table("~/Desktop/FST/vagans/pi_vagans")
-f_null = read.table("~/Desktop/FST/vagans/Fst_null_vagans.txt")
-f_test = read.table("~/Desktop/FST/vagans/Fst_test_vagans.txt")
-cover_test = read.table("~/Desktop/FST/vagans/geno_cover_vagans.txt") 
-af = read.table("~/Desktop/FST/vagans/AF_vagans.txt")
-HW_chi = read.table("~/Desktop/FST/vagans/HW_chi_vagans.txt")
+pi = read.table("~/Desktop/FST/lucanoides/pi_lucanoides")
+f_null = read.table("~/Desktop/FST/lucanoides/Fst_null_lucanoides.txt")
+f_test = read.table("~/Desktop/FST/lucanoides/Fst_test_lucanoides.txt")
+cover_test = read.table("~/Desktop/FST/lucanoides/geno_cover_lucanoides.txt") 
+af = read.table("~/Desktop/FST/lucanoides/AF_lucanoides.txt")
+HW_chi = read.table("~/Desktop/FST/lucanoides/HW_chi_lucanoides.txt")
+allele_class = read.table("~/Desktop/FST/lucanoides/AC_lucanoides.txt")
 
-FST_data = cbind(f_null,f_test,cover_test,pi)
-names(FST_data) = c("F_null","F_test","Cover","Pi")
+FST_data = cbind(f_null,f_test,cover_test,pi,af,HW_chi,allele_class)
+names(FST_data) = c("F_null","F_test","Cover","Pi","AF","HW","AC")
 
 ##SUBSETS FST DATA INTO COVERAGE GROUPS
 for (i in min(cover_test):max(cover_test)){
@@ -191,6 +201,10 @@ Hi_Pi = subset(FST_data, Pi > 0.8)
 Lo_Pi = subset(FST_data, Pi < 0.2)
 
 Pi_cat = cut(FST_data$Pi,breaks=10)
+
+#SUBSETS FST DATA TO EXCLUDE SINGLETONS (AC == 1)
+FST_data_AC = subset(FST_data, allele_class > 1)
+FST_data_AC_HT = subset(FST_data_AC, F_test == 1)
 
 ##############
 ###PLOTTING###
